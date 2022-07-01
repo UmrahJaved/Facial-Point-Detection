@@ -1,3 +1,4 @@
+from re import template
 from tkinter import Y
 import cv2
 import mediapipe as mp
@@ -7,6 +8,10 @@ import streamlit as st
 from validators import diners
 from zipfile import ZipFile
 import os
+from datetime import datetime
+import tempfile
+import zipfile
+import shutil
 
 st.set_option('deprecation.showPyplotGlobalUse', False)
 
@@ -29,18 +34,7 @@ result = face_mesh.process(image1)
 #Black background
 canvas = np.zeros((image1.shape[1], image1.shape[0], 1), dtype = "uint8")
 
-def num_face(pxl=3, indexes=landmark_points_68):
-    for facial_landmarks in result.multi_face_landmarks:
-        for i in indexes :
-            pt1 = facial_landmarks.landmark[i]
-            x = int(pt1.x * width)
-            y = int(pt1.y * height) 
-            cv2.putText(canvas, str(i), (x,y), 0, 0.3, (255,255,255))             
-    plt.imshow(canvas)
-    fig = plt.show()
-    st.pyplot(fig)
-
-def dot_face(pxl=3, indexes=landmark_points_68):
+def dot_face(indexes=landmark_points_68, pxl=3):
     for facial_landmarks in result.multi_face_landmarks:
         for i in indexes :
             pt1 = facial_landmarks.landmark[i]
@@ -51,15 +45,46 @@ def dot_face(pxl=3, indexes=landmark_points_68):
     fig = plt.show()
     st.pyplot(fig)
 
+def video_processing(file, directory):
+    cap = cv2.VideoCapture(t_file.name)
+    ret, image2 = cap.read()
+    height, width, channels = image2.shape
+    # Naming file with current timestamp
+    dateTimeObj = datetime.now()
+    name = dateTimeObj.strftime("%Y-%m-%d-%H:%M:%S")
+    out_path = f'{temp_dir}/{name}.mp4'
+    print('video path', out_path)
+    out = cv2.VideoWriter(out_path, cv2.VideoWriter_fourcc(*"mp4v"), 30, (image2.shape[0], image2.shape[1]), isColor=False)
+    while cap.isOpened():
+        ret, image2 = cap.read()
+        if ret is not True:
+            break
+        height, width, channels = image2.shape
+        # Facial landmarks
+        result = face_mesh.process(image2)
+        # Creating black background
+        canvas = np.zeros((image2.shape[1], image2.shape[0], 1), dtype = "uint8")
+        if not result.multi_face_landmarks:
+            continue            
+        for facial_landmarks in result.multi_face_landmarks: 
+            for i in landmark_points_68 :
+                pt1 = facial_landmarks.landmark[i]
+                x = int(pt1.x * width)
+                y = int(pt1.y * height)
+                cv2.circle(canvas, (x, y), 3, (100, 100, 0), -1)
+        out.write(canvas)
+    cap.release()
+    out.release()
+    
+
+
 st.subheader('Step 1: Upload video')
 data = st.file_uploader("Upload a video", type=None, accept_multiple_files=True)
 
-if data is not None:
-
+if len(data) >= 1 :
     with st.container():
         st.subheader('List of facial indexes')
         st.image('./data/image3.png')
-
 
     with st.container():
         st.subheader('Step 2: Set parameters and preview results')
@@ -68,77 +93,47 @@ if data is not None:
 
     with st.container():
         col1, col2, col3 = st.columns(3) 
-
         with col1:
             reset = st.button('Reset')
-                
-
         with col2:        
             preview =  st.button('Preview')
-        
         with col3:
             next = st.button('Next')
 
     with st.container():
         col1, col2 = st.columns(2) 
-
         if reset:
-            with col1:
-                dot_face()
-            with col2:
-                num_face()
-                
+            dot_face() 
         if preview:
-            d_indexes = landmark_points_68
-            print(d_indexes)
-            i_drop_l = i_drop_str.split(',')
-            print(i_drop_l)
-            for i in i_drop_l:
-                d_indexes.remove(int(i))
-            print(d_indexes)
-            if not int(pixel):
-                with col1:
-                    dot_face(3, d_indexes) 
-                with col2:
-                    num_face(3, d_indexes)
-            else: 
-                with col1:
-                    dot_face(int(pixel),d_indexes) 
-                with col2:
-                    num_face(int(pixel),d_indexes)
+            try:
+                d_indexes = landmark_points_68
+                i_drop_l = i_drop_str.split(',')
+                if i_drop_l != ['']:
+                    for i in i_drop_l:
+                        d_indexes.remove(int(i))
+                if len(pixel) >= 1:
+                    dot_face(d_indexes, int(pixel)) 
+                else: 
+                    dot_face(d_indexes)
+            except ValueError:
+                error = '<p style="font-family:Courier; color:Red; font-size: 20px; font-weight:bold;">Index not detected on face landmarks</p>'
+                st.markdown(error, unsafe_allow_html=True)
 
-        with st.container():
-        video_path = f'./data/{data.name}'
-        cap = cv2.VideoCapture(video_path)
-        ret, image2 = cap.read()
-        height, width, channels = image2.shape
-        name= "out.mp4"
-        out = cv2.VideoWriter(name, cv2.VideoWriter_fourcc(*"mp4v"), 30, (image2.shape[0], image2.shape[1]), isColor=False)
-        
-        while cap.isOpened():
-            ret, image3 = cap.read()
-            if ret is not True:
-                break
-            height, width, channels = image3.shape
-            # Facial landmarks
-            result = face_mesh.process(image3)
-            landmark_points_68 = [162,234,93,58,172,136,149,148,152,377,378,365,397,288,323,454,389,71,63,105,66,107,336,
-                    296,334,293,301,168,197,5,4,75,97,2,326,305,33,160,158,133,153,144,362,385,387,263,373,
-                    380,61,39,37,0,267,269,291,405,314,17,84,181,78,82,13,312,308,317,14,87]
-
-            canvas = np.zeros((image3.shape[1], image3.shape[0], 1), dtype = "uint8")
-            if not result.multi_face_landmarks:
-                continue            
-            for facial_landmarks in result.multi_face_landmarks: 
-                for i in landmark_points_68 :
-                    pt1 = facial_landmarks.landmark[i]
-                    x = int(pt1.x * width)
-                    y = int(pt1.y * height)
-                    cv2.circle(canvas, (x, y), 3, (100, 100, 0), -1)
-            out.write(canvas)
-
-        cap.release()
-        out.release()
+    with st.container():          
+        if next:
+            st.subheader('Step 3: Download your video... Enjoy!')
+            with tempfile.TemporaryDirectory(prefix='Out_') as temp_dir:
+                for file in data:
+                    with tempfile.NamedTemporaryFile() as t_file:
+                        t_file.write(file.read())
+                        video_processing(t_file,temp_dir)
+                        #t_file.flush() 
+                print(temp_dir, os.listdir(temp_dir))
+                    
+                
+                    
+                    
+    
 
 
 
